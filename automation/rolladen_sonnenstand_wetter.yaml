@@ -1,0 +1,537 @@
+blueprint:
+  name: Rollläden nach Sonnenstand & Wetter
+  description: >
+    Fährt eine Gruppe von Rollläden nach Sonnenstand herunter, wenn die Sonne
+    lange genug auf die angegebene Fassade scheint, und wieder hoch, wenn es
+    lange genug verschattet ist. Zusätzlich fahren die Rollläden bei Hagel,
+    Gewitter oder starkem Wind (jetzt oder in der Vorhersage) zum Schutz zu.
+
+
+    Kernlogik:
+
+    * "Sonne auf der Fassade" = Sonnen-Azimut liegt innerhalb ± Toleranz um die
+      Fassaden-Ausrichtung, Sonne steht hoch genug, und es ist nicht zu bewölkt.
+
+    * Erst wenn dieser Zustand ununterbrochen für die "Verzögerung Schließen"
+      anliegt, wird geschlossen. Erst wenn er ununterbrochen für die
+      "Verzögerung Öffnen" NICHT mehr anliegt, wird wieder geöffnet. Das
+      verhindert Hin-und-Her bei Wolkenlücken.
+
+    * Unwetterschutz hat immer Vorrang und überstimmt die Sonnenlogik.
+
+
+    Empfehlungswerte stehen jeweils in der Beschreibung des Feldes.
+
+  domain: automation
+  author: HA Agent
+  input:
+    rolllaeden:
+      name: Rollläden
+      icon: mdi:window-shutter
+      input:
+        covers:
+          name: Rollladen-Entitäten
+          description: >
+            Alle Cover dieser einen Fassade / Himmelsrichtung. Entweder die
+            Raum-Entitäten ODER die Gruppen wählen, nicht beides. Pro
+            Himmelsrichtung eine eigene Automation aus diesem Blueprint anlegen.
+          selector:
+            entity:
+              filter:
+                domain: cover
+              multiple: true
+        sun_close_position:
+          name: Position beim Verschatten ("zu %")
+          description: >
+            0 = ganz zu, 100 = ganz offen. NICHT ganz schließen: ein Rollladen
+            komplett unten staut die Wärme im Luftspalt vor der Scheibe und macht
+            den Raum dunkel. Empfehlung: 25–30 (Lüftungsspalt unten, blockt die
+            direkte Sonne, Rest-Tageslicht bleibt). 0 nur, wenn Verdunkelung
+            gewollt ist; 40–50 für sehr helle Räume mit wenig Hitzeproblem.
+          default: 30
+          selector:
+            number:
+              min: 0
+              max: 100
+              step: 5
+              unit_of_measurement: "%"
+              mode: slider
+        open_position:
+          name: Position beim Öffnen ("auf %")
+          description: >
+            Zielposition beim Wiederhochfahren, wenn keine Sonne mehr auf die
+            Fassade scheint. Empfehlung: 100. Kleiner wählen, wenn die Rollläden
+            tagsüber generell nie ganz hochfahren sollen.
+          default: 100
+          selector:
+            number:
+              min: 0
+              max: 100
+              step: 5
+              unit_of_measurement: "%"
+              mode: slider
+
+    ausrichtung:
+      name: Fassaden-Ausrichtung
+      icon: mdi:compass
+      input:
+        facade_azimuth:
+          name: Himmelsrichtung der Fassade (Azimut)
+          description: >
+            Kompassrichtung, in die die Fenster zeigen. 0 = Nord, 90 = Ost,
+            180 = Süd, 225 = Südwest, 270 = West. Empfehlung: reale Wandrichtung
+            eintragen.
+          default: 180
+          selector:
+            number:
+              min: 0
+              max: 359
+              step: 1
+              unit_of_measurement: "°"
+              mode: box
+        azimuth_tolerance:
+          name: Azimut-Toleranz (±)
+          description: >
+            Wie weit die Sonne seitlich von der Fassadenrichtung stehen darf und
+            noch als "scheint auf die Fassade" gilt. Empfehlung: 90 (ganze
+            besonnte Seite), 70–80 für nur direkte Einstrahlung.
+          default: 90
+          selector:
+            number:
+              min: 30
+              max: 120
+              step: 5
+              unit_of_measurement: "°"
+              mode: slider
+        sun_elevation_min:
+          name: Minimale Sonnenhöhe
+          description: >
+            Erst ab dieser Höhe über dem Horizont wird verschattet. Empfehlung:
+            10 (Hitzeschutz). Für Blendschutz auch bei tiefer Sonne: 3–5.
+          default: 10
+          selector:
+            number:
+              min: 0
+              max: 40
+              step: 1
+              unit_of_measurement: "°"
+              mode: slider
+        sun_elevation_max:
+          name: Maximale Sonnenhöhe (0 = aus)
+          description: >
+            Optional. Oberhalb dieser Höhe NICHT mehr verschatten (z. B. wenn ein
+            Dachüberstand die Mittagssonne ohnehin abhält). 0 = deaktiviert.
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 90
+              step: 1
+              unit_of_measurement: "°"
+              mode: slider
+
+    zeitfenster:
+      name: Zeitfenster
+      icon: mdi:clock-outline
+      input:
+        operating_time_start:
+          name: Frühestens ab
+          description: "Vor dieser Uhrzeit nichts tun. Empfehlung: 09:00."
+          default: "09:00:00"
+          selector:
+            time: {}
+        operating_time_end:
+          name: Spätestens bis
+          description: >
+            Nach dieser Uhrzeit nicht mehr verschatten. Empfehlung: 20:00
+            (Sommer) bzw. an die vorhandene Sonnenuntergangs-Automation angepasst.
+          default: "20:00:00"
+          selector:
+            time: {}
+        reopen_only_in_window:
+          name: Nur im Zeitfenster wieder öffnen
+          description: >
+            An: außerhalb des Zeitfensters wird nicht automatisch geöffnet
+            (überlässt das Öffnen z. B. der Morgen-/Abend-Automation).
+            Empfehlung: An.
+          default: true
+          selector:
+            boolean: {}
+
+    sonne_wetter:
+      name: Sonne & Verzögerungen
+      icon: mdi:weather-sunny
+      input:
+        weather_entity:
+          name: Wetter-Entität
+          description: Liefert Bewölkung, Zustand und Vorhersage (z. B. met.no).
+          selector:
+            entity:
+              filter:
+                domain: weather
+        cloud_coverage_max:
+          name: Maximale Bewölkung zum Verschatten
+          description: >
+            Ist die Wolkendecke höher als dieser Wert, wird nicht verschattet
+            (kein starker Sonnenschein). Empfehlung: 40. Bereich 30–50.
+            Hat die Wetter-Entität kein "cloud_coverage", wird auf den
+            Wetter-Zustand (sunny/partlycloudy) zurückgegriffen.
+          default: 40
+          selector:
+            number:
+              min: 0
+              max: 100
+              step: 5
+              unit_of_measurement: "%"
+              mode: slider
+        sun_close_delay:
+          name: Verzögerung Schließen
+          description: >
+            So lange muss "Sonne auf der Fassade" ununterbrochen anliegen, bevor
+            geschlossen wird. Empfehlung: 15 Min. Bereich 10–20.
+          default:
+            hours: 0
+            minutes: 15
+            seconds: 0
+          selector:
+            duration: {}
+        sun_open_delay:
+          name: Verzögerung Öffnen
+          description: >
+            So lange muss es ununterbrochen verschattet sein, bevor wieder
+            geöffnet wird. Bewusst länger als das Schließen, gegen Jo-Jo bei
+            durchziehenden Wolken. Empfehlung: 30 Min. Bereich 20–45.
+          default:
+            hours: 0
+            minutes: 30
+            seconds: 0
+          selector:
+            duration: {}
+
+    unwetterschutz:
+      name: Unwetterschutz
+      icon: mdi:weather-hail
+      input:
+        protective_conditions:
+          name: Schutz-auslösende Wetterzustände
+          description: >
+            Bei diesen Zuständen (jetzt oder in der Vorhersage) fahren die
+            Rollläden zu. Empfehlung: hail, lightning-rainy, snowy-rainy;
+            optional lightning und pouring ergänzen.
+          default:
+            - hail
+            - lightning-rainy
+            - snowy-rainy
+          selector:
+            select:
+              multiple: true
+              options:
+                - hail
+                - lightning
+                - lightning-rainy
+                - pouring
+                - snowy
+                - snowy-rainy
+                - exceptional
+        wind_speed_threshold_kmh:
+          name: Windgeschwindigkeit-Schwelle (km/h)
+          description: >
+            Ab diesem Wert gilt "starker Sturm" und die Rollläden fahren zu.
+            Eingabe immer in km/h – die Blueprint rechnet die Einheit der
+            Wetter-Entität automatisch um. Es handelt sich um Dauerwind (Böen
+            liegen höher). Empfehlung für Rollläden: 55 (Bft 8). Bereich 45–70.
+            Für Markisen/empfindliche Behänge deutlich niedriger (25–35).
+          default: 55
+          selector:
+            number:
+              min: 20
+              max: 120
+              step: 5
+              unit_of_measurement: "km/h"
+              mode: slider
+        severe_forecast_hours:
+          name: Vorhersage-Vorlauf
+          description: >
+            So viele Stunden im Voraus wird die Stundenvorhersage auf Hagel /
+            Gewitter / Sturm geprüft. Empfehlung: 2. Bereich 1–3. 0 = nur
+            aktuelle Lage, keine Vorhersage.
+          default: 2
+          selector:
+            number:
+              min: 0
+              max: 6
+              step: 1
+              unit_of_measurement: "h"
+              mode: slider
+        weather_close_position:
+          name: Position bei Unwetter
+          description: "0 = ganz zu (schützt die Scheibe bei Hagel). Empfehlung: 0."
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 100
+              step: 5
+              unit_of_measurement: "%"
+              mode: slider
+
+    optionen:
+      name: Optionen
+      icon: mdi:tune
+      input:
+        enable_entity:
+          name: Freigabe-Schalter (optional)
+          description: >
+            Optionaler input_boolean. Ist er "aus", tut die Automation nichts.
+            Leer lassen, wenn nicht benötigt.
+          default:
+          selector:
+            entity:
+              filter:
+                domain: input_boolean
+        position_tolerance:
+          name: Positions-Toleranz für Handbetrieb-Erkennung
+          description: >
+            Nur öffnen/schließen, wenn der Rollladen noch nahe an der zuletzt
+            automatisch gesetzten Position steht. Weicht er stärker ab, wurde er
+            von Hand verstellt und die Automation lässt ihn in Ruhe.
+            Empfehlung: 5.
+          default: 5
+          selector:
+            number:
+              min: 0
+              max: 25
+              step: 1
+              unit_of_measurement: "%"
+              mode: slider
+
+mode: queued
+max: 5
+max_exceeded: silent
+
+trigger_variables:
+  tv_facade_azimuth: !input facade_azimuth
+  tv_azimuth_tolerance: !input azimuth_tolerance
+  tv_elev_min: !input sun_elevation_min
+  tv_elev_max: !input sun_elevation_max
+  tv_weather: !input weather_entity
+  tv_cloud_max: !input cloud_coverage_max
+  tv_t_start: !input operating_time_start
+  tv_t_end: !input operating_time_end
+
+trigger:
+  - platform: template
+    id: sun_shade
+    value_template: >
+      {% set az = state_attr('sun.sun', 'azimuth') | float(999) %}
+      {% set el = state_attr('sun.sun', 'elevation') | float(-90) %}
+      {% set d = (az - (tv_facade_azimuth | float(180))) | abs %}
+      {% set d = [d, 360 - d] | min %}
+      {% set on_facade = d <= (tv_azimuth_tolerance | float(90)) %}
+      {% set cc = state_attr(tv_weather, 'cloud_coverage') %}
+      {% set bright = (cc | float(100) <= (tv_cloud_max | float(40))) if cc is not none
+                      else (states(tv_weather) in ['sunny', 'partlycloudy', 'windy', 'windy-variant']) %}
+      {% set elev_ok = el >= (tv_elev_min | float(10))
+                       and ((tv_elev_max | float(0)) <= 0 or el <= (tv_elev_max | float(0))) %}
+      {% set now_t = now().strftime('%H:%M:%S') %}
+      {% set in_window = (tv_t_start <= now_t <= tv_t_end) if tv_t_start <= tv_t_end
+                         else (now_t >= tv_t_start or now_t <= tv_t_end) %}
+      {{ on_facade and bright and elev_ok and in_window }}
+    for: !input sun_close_delay
+  - platform: template
+    id: sun_unshade
+    value_template: >
+      {% set az = state_attr('sun.sun', 'azimuth') | float(999) %}
+      {% set el = state_attr('sun.sun', 'elevation') | float(-90) %}
+      {% set d = (az - (tv_facade_azimuth | float(180))) | abs %}
+      {% set d = [d, 360 - d] | min %}
+      {% set on_facade = d <= (tv_azimuth_tolerance | float(90)) %}
+      {% set cc = state_attr(tv_weather, 'cloud_coverage') %}
+      {% set bright = (cc | float(100) <= (tv_cloud_max | float(40))) if cc is not none
+                      else (states(tv_weather) in ['sunny', 'partlycloudy', 'windy', 'windy-variant']) %}
+      {% set elev_ok = el >= (tv_elev_min | float(10))
+                       and ((tv_elev_max | float(0)) <= 0 or el <= (tv_elev_max | float(0))) %}
+      {{ not (on_facade and bright and elev_ok) }}
+    for: !input sun_open_delay
+  - platform: state
+    id: weather_change
+    entity_id: !input weather_entity
+  - platform: time_pattern
+    id: periodic
+    minutes: "/15"
+  - platform: homeassistant
+    id: ha_start
+    event: start
+
+variables:
+  covers: !input covers
+  facade_azimuth: !input facade_azimuth
+  azimuth_tolerance: !input azimuth_tolerance
+  elev_min: !input sun_elevation_min
+  elev_max: !input sun_elevation_max
+  weather_entity: !input weather_entity
+  cloud_max: !input cloud_coverage_max
+  t_start: !input operating_time_start
+  t_end: !input operating_time_end
+  reopen_only_in_window: !input reopen_only_in_window
+  sun_close_position: !input sun_close_position
+  open_position: !input open_position
+  weather_close_position: !input weather_close_position
+  protective_conditions: !input protective_conditions
+  wind_threshold_kmh: !input wind_speed_threshold_kmh
+  forecast_hours: !input severe_forecast_hours
+  enable_entity: !input enable_entity
+  pos_tol: !input position_tolerance
+  enable_ok: >
+    {{ enable_entity is none or enable_entity == '' or is_state(enable_entity, 'on') }}
+  wind_unit_factor: >
+    {% set u = state_attr(weather_entity, 'wind_speed_unit') or 'km/h' %}
+    {{ {'km/h': 1.0, 'm/s': 3.6, 'mph': 1.609344, 'kn': 1.852, 'ft/s': 1.09728}.get(u, 1.0) }}
+  in_window: >
+    {% set now_t = now().strftime('%H:%M:%S') %}
+    {{ (t_start <= now_t <= t_end) if t_start <= t_end
+       else (now_t >= t_start or now_t <= t_end) }}
+  shade_now: >
+    {% set az = state_attr('sun.sun', 'azimuth') | float(999) %}
+    {% set el = state_attr('sun.sun', 'elevation') | float(-90) %}
+    {% set d = (az - (facade_azimuth | float(180))) | abs %}
+    {% set d = [d, 360 - d] | min %}
+    {% set on_facade = d <= (azimuth_tolerance | float(90)) %}
+    {% set cc = state_attr(weather_entity, 'cloud_coverage') %}
+    {% set bright = (cc | float(100) <= (cloud_max | float(40))) if cc is not none
+                    else (states(weather_entity) in ['sunny', 'partlycloudy', 'windy', 'windy-variant']) %}
+    {% set elev_ok = el >= (elev_min | float(10))
+                     and ((elev_max | float(0)) <= 0 or el <= (elev_max | float(0))) %}
+    {{ on_facade and bright and elev_ok and in_window }}
+  now_threat: >
+    {% set c = states(weather_entity) %}
+    {% set kmh = (state_attr(weather_entity, 'wind_speed') | float(0)) * (wind_unit_factor | float(1)) %}
+    {{ c in protective_conditions or kmh >= (wind_threshold_kmh | float(55)) }}
+
+action:
+  # -----------------------------------------------------------------
+  # 0. Unwetter-Vorhersage laden und Gesamt-Bedrohung bestimmen
+  # -----------------------------------------------------------------
+  - variables:
+      fc_threat: false
+  - if:
+      - "{{ enable_ok }}"
+      - "{{ not now_threat }}"
+      - "{{ (forecast_hours | int(0)) > 0 }}"
+    then:
+      - service: weather.get_forecasts
+        target:
+          entity_id: !input weather_entity
+        data:
+          type: hourly
+        response_variable: fc
+      - variables:
+          fc_threat: >
+            {% set items = (fc.get(weather_entity, {}).get('forecast', [])) %}
+            {% set horizon = now() + timedelta(hours=forecast_hours | int(2)) %}
+            {% set ns = namespace(hit=false) %}
+            {% for f in items %}
+              {% set dt = as_datetime(f.datetime) %}
+              {% if dt is not none and dt <= horizon %}
+                {% set fkmh = (f.get('wind_speed', 0) | float(0)) * (wind_unit_factor | float(1)) %}
+                {% if f.get('condition') in protective_conditions or fkmh >= (wind_threshold_kmh | float(55)) %}
+                  {% set ns.hit = true %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.hit }}
+  - variables:
+      severe_weather: "{{ now_threat or fc_threat }}"
+
+  - choose:
+      # ---------------------------------------------------------------
+      # A. Unwetterschutz – hat Vorrang
+      # ---------------------------------------------------------------
+      - conditions:
+          - "{{ enable_ok }}"
+          - "{{ severe_weather }}"
+        sequence:
+          - repeat:
+              for_each: "{{ covers }}"
+              sequence:
+                - choose:
+                    - conditions: "{{ state_attr(repeat.item, 'current_position') is not none }}"
+                      sequence:
+                        - service: cover.set_cover_position
+                          target:
+                            entity_id: "{{ repeat.item }}"
+                          data:
+                            position: "{{ weather_close_position }}"
+                  default:
+                    - service: cover.close_cover
+                      target:
+                        entity_id: "{{ repeat.item }}"
+
+      # ---------------------------------------------------------------
+      # B. Verschatten nach Sonnenstand
+      # ---------------------------------------------------------------
+      - conditions:
+          - "{{ enable_ok }}"
+          - "{{ not severe_weather }}"
+          - "{{ shade_now }}"
+          # Verschatten nur über den entprellten Trigger (Verzögerung Schließen)
+          # oder einmalig zur Zustandskorrektur nach HA-Neustart.
+          - "{{ trigger.id in ['sun_shade', 'ha_start'] }}"
+        sequence:
+          - repeat:
+              for_each: "{{ covers }}"
+              sequence:
+                - variables:
+                    cur: "{{ state_attr(repeat.item, 'current_position') }}"
+                - choose:
+                    # Position wird unterstützt und Rollladen steht noch "offen genug"
+                    - conditions: >
+                        {{ cur is not none
+                           and (cur | int(-1)) > (sun_close_position | int(0)) + (pos_tol | int(5)) }}
+                      sequence:
+                        - service: cover.set_cover_position
+                          target:
+                            entity_id: "{{ repeat.item }}"
+                          data:
+                            position: "{{ sun_close_position }}"
+                    # Keine Positionsunterstützung -> einfach schließen
+                    - conditions: "{{ cur is none and is_state(repeat.item, 'open') }}"
+                      sequence:
+                        - service: cover.close_cover
+                          target:
+                            entity_id: "{{ repeat.item }}"
+
+      # ---------------------------------------------------------------
+      # C. Wieder öffnen
+      # ---------------------------------------------------------------
+      - conditions:
+          - "{{ enable_ok }}"
+          - "{{ not severe_weather }}"
+          - "{{ not shade_now }}"
+          - "{{ in_window or not reopen_only_in_window }}"
+          # Öffnen nur über den entprellten Trigger (Verzögerung Öffnen)
+          # oder einmalig zur Zustandskorrektur nach HA-Neustart.
+          - "{{ trigger.id in ['sun_unshade', 'ha_start'] }}"
+        sequence:
+          - repeat:
+              for_each: "{{ covers }}"
+              sequence:
+                - variables:
+                    cur: "{{ state_attr(repeat.item, 'current_position') }}"
+                - choose:
+                    # Steht noch nahe an der Verschattungs-Position -> wir haben ihn zugefahren
+                    - conditions: >
+                        {{ cur is not none
+                           and (cur | int(-1)) >= 0
+                           and (cur | int(999)) <= (sun_close_position | int(0)) + (pos_tol | int(5)) }}
+                      sequence:
+                        - service: cover.set_cover_position
+                          target:
+                            entity_id: "{{ repeat.item }}"
+                          data:
+                            position: "{{ open_position }}"
+                    - conditions: "{{ cur is none and is_state(repeat.item, 'closed') }}"
+                      sequence:
+                        - service: cover.open_cover
+                          target:
+                            entity_id: "{{ repeat.item }}"
