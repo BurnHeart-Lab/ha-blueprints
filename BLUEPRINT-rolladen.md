@@ -1,66 +1,89 @@
-# Blueprint: Rollläden nach Sonnenstand & Wetter
+# Blueprint: Rollläden – Sonne, Wetter, Tag & Nacht
 
 Datei: [`automation/rolladen_sonnenstand_wetter.yaml`](automation/rolladen_sonnenstand_wetter.yaml)
 
-## Was sie macht
+Ein Blueprint pro Himmelsrichtung steuert den kompletten Tagesablauf einer
+Rollladen-Gruppe. Alle Teilfunktionen sind integriert, damit sie sich nicht
+gegenseitig überfahren.
 
-- **Verschatten:** Scheint die Sonne lange genug (Verzögerung Schließen) auf die
-  angegebene Fassade – Azimut in Toleranz, Sonne hoch genug, nicht zu bewölkt –
-  fahren die Rollläden auf die Verschattungs-Position.
-- **Öffnen:** Ist es lange genug (Verzögerung Öffnen) nicht mehr besonnt, fahren
-  sie wieder hoch. Die Öffnen-Verzögerung ist bewusst länger → kein Jo-Jo bei
-  Wolkenlücken.
-- **Unwetterschutz (Vorrang):** Bei Hagel, Gewitter oder Sturm – aktuell **oder**
-  in der Stundenvorhersage der nächsten Stunden – fahren die Rollläden zu.
-- **Handbetrieb:** Wurde ein Rollladen von Hand deutlich anders gestellt, lässt
-  die Automation ihn in Ruhe (Positions-Toleranz).
+## Prioritäten
 
-Pro Himmelsrichtung **eine eigene Automation** aus dem Blueprint anlegen
-(Süd, West, Ost …), jeweils mit den Covern dieser Seite.
+Bei jeder Auswertung gewinnt die höchste zutreffende Stufe:
 
-## Installation
+1. **Unwetter** – Hagel / Gewitter / Sturm jetzt oder in der Stundenvorhersage
+   → Position „Unwetter".
+2. **Nacht** – zwischen Schließ- und Öffnungszeit → Position „Nacht".
+3. **Verschattung** – Sonne scheint (entprellt) auf die Fassade → Position
+   „Verschattung".
+4. **Offen** – sonst → Position „offen".
 
-Es gibt keinen HA-REST-Weg, Blueprint-Dateien zu schreiben – daher manuell:
+## Tagesablauf
 
-**Variante A – Editor-Add-on (Studio Code Server / File Editor):**
-1. Ordner `/config/blueprints/automation/ha_agent/` anlegen.
-2. `rolladen_sonnenstand_wetter.yaml` dort hineinlegen (Inhalt aus diesem Repo).
-3. HA → Einstellungen → Automationen & Szenen → **Blueprints** → sollte
-   „Rollläden nach Sonnenstand & Wetter" zeigen. Sonst: Entwicklerwerkzeuge →
-   YAML → *Automationen neu laden*.
+| Phase | Auslöser | Verhalten |
+|---|---|---|
+| **Guten Morgen** | Sonnenaufgang ± Offset, begrenzt auf `[frühestens, spätestens]` | Öffnet. Ist die Sonne dann schon hoch genug + warm + auf der Fassade, wird nur auf die Verschattungs-Position geöffnet und die Tag-Verschattung übernimmt. |
+| **Aufsteh-Button** | `input_button`-Druck | Öffnet sofort, unabhängig von der Uhrzeit. Abends gedrückt fahren die Rollläden kurz hoch und die Nacht-Logik schließt wieder. |
+| **Verschatten** | Sonne ununterbrochen für „Verzögerung Schließen" auf der Fassade (Azimut ± Toleranz, Höhe ≥ min, Bewölkung ≤ max, Temperatur ≥ Schwelle) | Fährt auf Verschattungs-Position. |
+| **Aufhellen** | Bedingung ununterbrochen für „Verzögerung Öffnen" nicht mehr erfüllt | Fährt auf „offen". Längere Verzögerung → kein Jo-Jo bei Wolkenlücken. |
+| **Gute Nacht** | Sonnenuntergang ± Offset, begrenzt auf `[frühestens, spätestens]` | Schließt auf „Nacht". „Spätestens" = z. B. Kinder-Schlafenszeit, auch wenn die Sonne noch scheint. „Frühestens" = Winterschutz gegen „16:30 schon dunkel". |
+| **Unwetter** | Wetterzustand/-vorhersage | Schließt auf „Unwetter" (0 = Scheibenschutz bei Hagel), Vorrang vor allem. |
 
-**Variante B – Import über URL:** Blueprint als Raw-YAML hosten (z. B. Gist),
-dann HA → Blueprints → *Blueprint importieren* → URL einfügen.
-
-Danach: **Automation erstellen → Aus Blueprint → Rollläden nach Sonnenstand & Wetter.**
+Für unterschiedliche Schlafenszeiten (Kinderzimmer 19:30, Rest 21:30) einfach
+**zwei Instanzen** mit verschiedener „spätester Schließzeit" anlegen.
 
 ## Empfehlungswerte
 
-| Eingabe | Empfehlung | Bereich / Hinweis |
+| Eingabe | Empfehlung | Hinweis |
 |---|---|---|
-| Position beim Verschatten ("zu %") | `30` | Lüftungsspalt gegen Wärmestau; `0` nur für Verdunkelung, `40–50` für helle Räume |
-| Position beim Öffnen ("auf %") | `100` | |
+| Position „offen" | `100` | |
+| Position „Verschattung" (zu %) | `30` | Lüftungsspalt gegen Wärmestau; `0` nur für Verdunkelung |
+| Position „Nacht" | `0` | `10–20` für Nachtluft im Sommer |
+| Position „Unwetter" | `0` | schützt die Scheibe bei Hagel |
 | Fassaden-Azimut | reale Wandrichtung | 0 N · 90 O · 180 S · 225 SW · 270 W |
 | Azimut-Toleranz ± | `90°` | `70–80°` für nur direkte Einstrahlung |
-| Minimale Sonnenhöhe | `10°` | `3–5°` für Blendschutz auch bei tiefer Sonne |
+| Minimale Sonnenhöhe | `10°` | Ost/West `3–5°` (tiefe Sonne scheint dort am tiefsten rein) |
 | Maximale Sonnenhöhe | `0` (aus) | nur bei Dachüberstand über Mittag |
-| Zeitfenster | `09:00`–`20:00` | im Sommer ggf. bis `21:00` |
-| Nur im Fenster öffnen | **an** | überlässt Öffnen der Morgen-/Abend-Automation |
 | Max. Bewölkung | `40 %` | `30–50 %` |
-| Verzögerung Schließen | `15 min` | `10–20 min` |
-| Verzögerung Öffnen | `30 min` | `20–45 min` |
-| Schutz-Wetterzustände | `hail`, `lightning-rainy`, `snowy-rainy` | optional `lightning`, `pouring` |
-| Wind-Schwelle | `55 km/h` (Bft 8, Dauerwind) | `45–70` für Rollläden · `25–35` für Markisen. Eingabe in km/h, Umrechnung automatisch |
+| Verschatten erst ab | `18 °C` | `0` = Temperatur ignorieren; hält die Verschattung an kühlen Sonnentagen aus |
+| Verzögerung Schließen | `15 min` | `10–20` |
+| Verzögerung Öffnen | `30 min` | `20–45` |
+| Offset Sonnenaufgang | `0` … `+15 min` | |
+| Frühestens öffnen | `06:30` | eigene Instanz fürs Wochenende, falls später |
+| Spätestens öffnen | `09:00` | Wintertage mit spätem Sonnenaufgang |
+| Offset Sonnenuntergang | `−15 min` … `0` | |
+| Frühestens schließen | `17:00` | Winterschutz |
+| Spätestens schließen | `21:30` | Kinderzimmer `19:30`; `23:59` = keine Obergrenze |
+| Schutz-Wetterzustände | `hail, lightning-rainy, snowy-rainy` | optional `lightning`, `pouring` |
+| Wind-Schwelle | `55 km/h` (Bft 8, Dauerwind) | `45–70` Rollläden · `25–35` Markisen; Eingabe in km/h, Umrechnung automatisch |
 | Vorhersage-Vorlauf | `2 h` | `1–3 h`; `0` = nur aktuelle Lage |
-| Position bei Unwetter | `0` | schützt die Scheibe bei Hagel |
 | Positions-Toleranz | `5 %` | Handbetrieb-Erkennung |
+
+## Installation
+
+1. `input_button`-Helfer für „Aufstehen" anlegen (Einstellungen → Geräte &
+   Dienste → Helfer → Taste).
+2. Blueprint importieren (URL siehe [README](README.md)).
+3. **Automation erstellen → Aus Blueprint** → Formular ausfüllen.
+4. Pro Himmelsrichtung wiederholen.
+
+## Handbetrieb-Erkennung
+
+Die Automation fährt einen Rollladen nur, wenn er noch nahe an der zuletzt von
+ihr gesetzten Position steht (± Positions-Toleranz). Hast du ihn von Hand
+deutlich woanders hingestellt, bleibt er in Ruhe – bis zur nächsten Phase, die
+ihn ohnehin bewegen würde (z. B. Nacht).
 
 ## Bekannte Randfälle
 
-- Gibt es bereits eine Sonnenuntergangs-/Abend-Automation für die Rollläden,
-  Zeitfenster-Ende und „Nur im Fenster öffnen = an" so wählen, dass sich beide
-  nicht widersprechen.
-- Manche Wetter-Integrationen (z. B. met.no) liefern keine Böen-Vorhersage
-  (`wind_gust_speed` = null) – dann wird der Dauerwind geprüft, Schwelle
-  entsprechend niedriger ansetzen.
-- Bei HA-Neustart wird der Soll-Zustand einmalig ohne Verzögerung hergestellt.
+- **Verschattungs-Position von Nacht/Unwetter unterscheiden** (z. B. 30 vs 0).
+  Sind sie gleich, kann eine kurze Wolke die „Verzögerung Öffnen" umgehen.
+- **Neustart:** Home Assistant stellt beim Start den zur Uhrzeit passenden
+  Zustand ohne Verzögerung her.
+- **Unwetter bei Hitze:** Zieht ein Gewitter an einem heißen, sonnigen
+  Nachmittag durch, bleiben die Rollläden nach dem Unwetter auf
+  „Unwetter"-Position (dunkel, aber kühl), bis die nächste Verschattungs-Kante,
+  ein Neustart oder der Abend kommt.
+- **`wind_gust_speed`** fehlt bei manchen Wetter-Integrationen (z. B. met.no) –
+  dann zählt der Dauerwind, Schwelle entsprechend niedriger ansetzen.
+- Existiert bereits eine eigene Sonnenuntergangs-/Morgen-Automation für dieselben
+  Rollläden, sollte sie deaktiviert werden – dieses Blueprint übernimmt das.

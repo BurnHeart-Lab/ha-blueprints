@@ -2,10 +2,11 @@
 
 Home-Assistant-Blueprints für das eigene Setup.
 
-## Rollläden nach Sonnenstand & Wetter
+## Rollläden – Sonne, Wetter, Tag & Nacht
 
-Sonnenstandsgeführte Verschattung einer Fassade mit Unwetterschutz
-(Hagel / Gewitter / Sturm, aktuell + Stundenvorhersage).
+Kompletter Tagesablauf einer Rollladen-Gruppe pro Himmelsrichtung:
+Guten Morgen, Verschattung nach Sonnenstand, Gute Nacht, Unwetterschutz —
+integriert mit fester Prioritätsreihenfolge.
 
 - Blueprint: [`automation/rolladen_sonnenstand_wetter.yaml`](automation/rolladen_sonnenstand_wetter.yaml)
 - Ausführliche Doku & Empfehlungswerte: [`BLUEPRINT-rolladen.md`](BLUEPRINT-rolladen.md)
@@ -18,5 +19,5 @@ Sonnenstandsgeführte Verschattung einer Fassade mit Unwetterschutz
 https://github.com/BurnHeart-Lab/ha-blueprints/blob/main/automation/rolladen_sonnenstand_wetter.yaml
 ```
 
-Danach: **Automation erstellen → Aus Blueprint → „Rollläden nach Sonnenstand & Wetter"**.
+Danach: **Automation erstellen → Aus Blueprint → „Rollläden – Sonne, Wetter, Tag & Nacht"**.
 Pro Himmelsrichtung eine eigene Automation anlegen.
