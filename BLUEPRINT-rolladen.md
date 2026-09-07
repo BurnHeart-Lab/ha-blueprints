@@ -40,7 +40,7 @@ Für unterschiedliche Schlafenszeiten (Kinderzimmer 19:30, Rest 21:30) einfach
 | Position „Nacht" | `0` | `10–20` für Nachtluft im Sommer |
 | Position „Unwetter" | `0` | schützt die Scheibe bei Hagel |
 | Fassaden-Azimut | reale Wandrichtung | 0 N · 90 O · 180 S · 225 SW · 270 W |
-| Azimut-Toleranz ± | `90°` | `70–80°` für nur direkte Einstrahlung |
+| Azimut-Toleranz ± | `70°` | `65–75°`. `90°` verschattet bis die Sonne fast hinterm Haus steht (streifender Einfall zählt dann noch) |
 | Minimale Sonnenhöhe | `10°` | Ost/West `3–5°` (tiefe Sonne scheint dort am tiefsten rein) |
 | Maximale Sonnenhöhe | `0` (aus) | nur bei Dachüberstand über Mittag |
 | Max. Bewölkung | `40 %` | `30–50 %` |
@@ -54,7 +54,8 @@ Für unterschiedliche Schlafenszeiten (Kinderzimmer 19:30, Rest 21:30) einfach
 | Frühestens schließen | `17:00` | Winterschutz |
 | Spätestens schließen | `21:30` | Kinderzimmer `19:30`; `23:59` = keine Obergrenze |
 | Schutz-Wetterzustände | `hail, lightning-rainy, snowy-rainy` | optional `lightning`, `pouring` |
-| Wind-Schwelle | `55 km/h` (Bft 8, Dauerwind) | `45–70` Rollläden · `25–35` Markisen; Eingabe in km/h, Umrechnung automatisch |
+| Wind-Schwelle (Dauerwind) | `55 km/h` (Bft 8) | `45–70` Rollläden · `25–35` Markisen; Eingabe in km/h, Umrechnung automatisch |
+| Böen-Schwelle | `70 km/h` | `0` = aus; nutzt `wind_gust_speed`, falls die Wetter-Entität es liefert (WetterOnline ja, met.no nein) |
 | Vorhersage-Vorlauf | `2 h` | `1–3 h`; `0` = nur aktuelle Lage |
 | Positions-Toleranz | `5 %` | Handbetrieb-Erkennung |
 
@@ -83,7 +84,11 @@ ihn ohnehin bewegen würde (z. B. Nacht).
   Nachmittag durch, bleiben die Rollläden nach dem Unwetter auf
   „Unwetter"-Position (dunkel, aber kühl), bis die nächste Verschattungs-Kante,
   ein Neustart oder der Abend kommt.
-- **`wind_gust_speed`** fehlt bei manchen Wetter-Integrationen (z. B. met.no) –
-  dann zählt der Dauerwind, Schwelle entsprechend niedriger ansetzen.
+- **Wetter-Entität-Ausfall:** Geht sie auf `unavailable`/`unknown`, wird
+  Unwetterschutz + Verschattung übersprungen (Nacht/Morgen laufen weiter). Der
+  Forecast-Aufruf bricht die Automation nicht mehr ab. met.no lässt sich im
+  Formular als manueller Ersatz eintragen.
+- **`wind_gust_speed`** fehlt bei manchen Integrationen (z. B. met.no) – dort ist
+  die Böen-Schwelle wirkungslos, der Dauerwind zählt weiter.
 - Existiert bereits eine eigene Sonnenuntergangs-/Morgen-Automation für dieselben
   Rollläden, sollte sie deaktiviert werden – dieses Blueprint übernimmt das.

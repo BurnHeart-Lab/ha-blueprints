@@ -22,8 +22,11 @@ blueprint:
        Fenster zwischen "frühestens" (Winterschutz) und "spätestens"
        (z. B. Kinder-Schlafenszeit, auch wenn die Sonne noch scheint).
 
-    4. UNWETTERSCHUTZ – bei Hagel / Gewitter / Sturm (jetzt oder in der
-       Stundenvorhersage) fahren die Rollläden zu. Hat immer Vorrang.
+    4. UNWETTERSCHUTZ – bei Hagel / Gewitter / Sturm (Wetterzustand, Dauerwind
+       oder Böen – jetzt oder in der Stundenvorhersage) fahren die Rollläden zu.
+       Hat immer Vorrang. Ist die Wetter-Entität unavailable/unknown, wird der
+       Unwetterschutz übersprungen (statt die ganze Automation abzubrechen);
+       Verschattung pausiert dann ebenfalls, Nacht/Morgen laufen normal weiter.
 
 
     Prioritätsreihenfolge: Unwetter > Nacht > Verschattung > offen.
@@ -222,12 +225,21 @@ blueprint:
         wind_speed_threshold_kmh:
           name: Windgeschwindigkeit-Schwelle (km/h)
           description: >
-            Eingabe in km/h, Umrechnung aus der Einheit der Wetter-Entität
-            automatisch. Dauerwind (Böen liegen höher). Empfehlung für
-            Rollläden: 55 (Bft 8), Bereich 45–70. Markisen deutlich niedriger.
+            Dauerwind (`wind_speed`). Eingabe in km/h, Umrechnung aus der Einheit
+            der Wetter-Entität automatisch. Empfehlung für Rollläden: 55 (Bft 8),
+            Bereich 45–70. Markisen deutlich niedriger.
           default: 55
           selector:
             number: { min: 20, max: 120, step: 5, unit_of_measurement: "km/h", mode: slider }
+        wind_gust_threshold_kmh:
+          name: Böen-Schwelle (km/h, 0 = aus)
+          description: >
+            Zusätzliche Schwelle auf die Böen (`wind_gust_speed`), falls die
+            Wetter-Entität das liefert (WetterOnline ja, met.no nein – dann
+            wirkungslos). Empfehlung: 70 (Bft 8-Böe). 0 = Böen ignorieren.
+          default: 70
+          selector:
+            number: { min: 0, max: 150, step: 5, unit_of_measurement: "km/h", mode: slider }
         severe_forecast_hours:
           name: Vorhersage-Vorlauf
           description: "Stunden voraus auf Hagel/Gewitter/Sturm prüfen. Empfehlung: 2. 0 = nur aktuelle Lage."
@@ -338,6 +350,7 @@ variables:
   latest_close: !input latest_close_time
   protective_conditions: !input protective_conditions
   wind_threshold_kmh: !input wind_speed_threshold_kmh
+  gust_threshold_kmh: !input wind_gust_threshold_kmh
   forecast_hours: !input severe_forecast_hours
   enable_entity: !input enable_entity
   pos_tol: !input position_tolerance
@@ -383,10 +396,18 @@ variables:
                      or (state_attr(weather_entity, 'temperature') | float(-99)) >= (shade_min_temp | float(0)) %}
     {{ sun_on_facade and bright and elev_ok and warm_ok }}
 
+  # Wetter-Entität überhaupt nutzbar? (nicht unavailable/unknown/leer)
+  weather_ok: >
+    {{ states(weather_entity) not in ['unavailable', 'unknown', 'none', ''] }}
   now_threat: >
     {% set c = states(weather_entity) %}
-    {% set kmh = (state_attr(weather_entity, 'wind_speed') | float(0)) * (wind_unit_factor | float(1)) %}
-    {{ c in protective_conditions or kmh >= (wind_threshold_kmh | float(55)) }}
+    {% set kmh  = (state_attr(weather_entity, 'wind_speed') | float(0)) * (wind_unit_factor | float(1)) %}
+    {% set gust = (state_attr(weather_entity, 'wind_gust_speed') | float(0)) * (wind_unit_factor | float(1)) %}
+    {{ weather_ok and (
+         c in protective_conditions
+         or kmh >= (wind_threshold_kmh | float(55))
+         or ((gust_threshold_kmh | float(0)) > 0 and gust >= (gust_threshold_kmh | float(0)))
+       ) }}
 
 action:
   # ---------------------------------------------------------------
@@ -396,13 +417,17 @@ action:
       fc_threat: false
   - if:
       - "{{ enable_ok }}"
+      - "{{ weather_ok }}"
       - "{{ not now_threat }}"
       - "{{ (forecast_hours | int(0)) > 0 }}"
       - >
         {{ trigger.id in ['weather_change', 'ha_start', 'wake_button']
            or (trigger.id == 'tick' and now().minute % 15 == 0) }}
     then:
+      # continue_on_error: eine kaputte/unavailable Wetter-Entität darf die
+      # Automation (Nacht/Morgen/Verschattung) NICHT abbrechen.
       - service: weather.get_forecasts
+        continue_on_error: true
         target:
           entity_id: !input weather_entity
         data:
@@ -410,14 +435,17 @@ action:
         response_variable: fc
       - variables:
           fc_threat: >
-            {% set items = (fc.get(weather_entity, {}).get('forecast', [])) %}
+            {% set items = (fc.get(weather_entity, {}).get('forecast', []) if fc is defined else []) %}
             {% set horizon = now() + timedelta(hours=forecast_hours | int(2)) %}
             {% set ns = namespace(hit=false) %}
             {% for f in items %}
               {% set dt = as_datetime(f.datetime) %}
               {% if dt is not none and dt <= horizon %}
-                {% set fkmh = (f.get('wind_speed', 0) | float(0)) * (wind_unit_factor | float(1)) %}
-                {% if f.get('condition') in protective_conditions or fkmh >= (wind_threshold_kmh | float(55)) %}
+                {% set fkmh  = (f.get('wind_speed', 0) | float(0)) * (wind_unit_factor | float(1)) %}
+                {% set fgust = (f.get('wind_gust_speed', 0) | float(0)) * (wind_unit_factor | float(1)) %}
+                {% if f.get('condition') in protective_conditions
+                      or fkmh >= (wind_threshold_kmh | float(55))
+                      or ((gust_threshold_kmh | float(0)) > 0 and fgust >= (gust_threshold_kmh | float(0))) %}
                   {% set ns.hit = true %}
                 {% endif %}
               {% endif %}
