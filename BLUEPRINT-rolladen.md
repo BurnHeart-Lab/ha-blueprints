@@ -23,7 +23,7 @@ Bei jeder Auswertung gewinnt die höchste zutreffende Stufe:
 |---|---|---|
 | **Guten Morgen** | Sonnenaufgang ± Offset, begrenzt auf `[frühestens, spätestens]` | Öffnet. Ist die Sonne dann schon hoch genug + warm + auf der Fassade, wird nur auf die Verschattungs-Position geöffnet und die Tag-Verschattung übernimmt. |
 | **Aufsteh-Button** | `input_button`-Druck | Öffnet sofort, unabhängig von der Uhrzeit. Abends gedrückt fahren die Rollläden kurz hoch und die Nacht-Logik schließt wieder. |
-| **Verschatten** | Sonne ununterbrochen für „Verzögerung Schließen" auf der Fassade (Azimut ± Toleranz, Höhe ≥ min, Bewölkung ≤ max, Temperatur ≥ Schwelle) | Fährt auf Verschattungs-Position. |
+| **Verschatten** | Sonne ununterbrochen für „Verzögerung Schließen" auf der Fassade: Azimut ± Toleranz **und** Höhe ≥ min **und** klarer Himmel (`cloud_coverage` ≤ max, oder Zustand in der „sonnig genug"-Liste) **und** Temperatur ≥ Schwelle | Fährt auf Verschattungs-Position. |
 | **Aufhellen** | Bedingung ununterbrochen für „Verzögerung Öffnen" nicht mehr erfüllt | Fährt auf „offen". Längere Verzögerung → kein Jo-Jo bei Wolkenlücken. |
 | **Gute Nacht** | Sonnenuntergang ± Offset, begrenzt auf `[frühestens, spätestens]` | Schließt auf „Nacht". „Spätestens" = z. B. Kinder-Schlafenszeit, auch wenn die Sonne noch scheint. „Frühestens" = Winterschutz gegen „16:30 schon dunkel". |
 | **Unwetter** | Wetterzustand/-vorhersage | Schließt auf „Unwetter" (0 = Scheibenschutz bei Hagel), Vorrang vor allem. |
@@ -40,11 +40,12 @@ Für unterschiedliche Schlafenszeiten (Kinderzimmer 19:30, Rest 21:30) einfach
 | Position „Nacht" | `0` | `10–20` für Nachtluft im Sommer |
 | Position „Unwetter" | `0` | schützt die Scheibe bei Hagel |
 | Fassaden-Azimut | reale Wandrichtung | 0 N · 90 O · 180 S · 225 SW · 270 W |
-| Azimut-Toleranz ± | `70°` | `65–75°`. `90°` verschattet bis die Sonne fast hinterm Haus steht (streifender Einfall zählt dann noch) |
-| Minimale Sonnenhöhe | `10°` | Ost/West `3–5°` (tiefe Sonne scheint dort am tiefsten rein) |
+| Azimut-Toleranz ± | `70°` | `65–75°`. `90°` verschattet bis die Sonne fast hinterm Haus steht. Nordseiten `40–55°` |
+| Minimale Sonnenhöhe | `15°` | tiefer (`5–10°`) nur bei echt blendender Ost-/Westsonne. Nordseiten `20–25°` |
 | Maximale Sonnenhöhe | `0` (aus) | nur bei Dachüberstand über Mittag |
-| Max. Bewölkung | `40 %` | `30–50 %` |
-| Verschatten erst ab | `18 °C` | `0` = Temperatur ignorieren; hält die Verschattung an kühlen Sonnentagen aus |
+| Max. Bewölkung | `40 %` | nur wirksam bei Entitäten mit `cloud_coverage` (met.no) |
+| „Sonnig genug"-Zustände | `[sunny]` | Ersatz für Entitäten ohne `cloud_coverage` (WetterOnline). `partlycloudy` ergänzen = auch bei Wolkenlücken verschatten |
+| Verschatten erst ab | `20 °C` | `0` = Temperatur ignorieren; hält Verschattung an kühlen Sonnentagen aus |
 | Verzögerung Schließen | `15 min` | `10–20` |
 | Verzögerung Öffnen | `30 min` | `20–45` |
 | Offset Sonnenaufgang | `0` … `+15 min` | |
@@ -57,27 +58,35 @@ Für unterschiedliche Schlafenszeiten (Kinderzimmer 19:30, Rest 21:30) einfach
 | Wind-Schwelle (Dauerwind) | `55 km/h` (Bft 8) | `45–70` Rollläden · `25–35` Markisen; Eingabe in km/h, Umrechnung automatisch |
 | Böen-Schwelle | `70 km/h` | `0` = aus; nutzt `wind_gust_speed`, falls die Wetter-Entität es liefert (WetterOnline ja, met.no nein) |
 | Vorhersage-Vorlauf | `2 h` | `1–3 h`; `0` = nur aktuelle Lage |
-| Positions-Toleranz | `5 %` | Handbetrieb-Erkennung |
+| Automatik-Schalter | – | optionaler `input_boolean`; AUS = Automatik pausiert, du steuerst von Hand |
 
 ## Installation
 
 1. `input_button`-Helfer für „Aufstehen" anlegen (Einstellungen → Geräte &
    Dienste → Helfer → Taste).
-2. Blueprint importieren (URL siehe [README](README.md)).
-3. **Automation erstellen → Aus Blueprint** → Formular ausfüllen.
-4. Pro Himmelsrichtung wiederholen.
+2. Optional `input_boolean`-Helfer als Automatik-Schalter anlegen.
+3. Blueprint importieren (URL siehe [README](README.md)).
+4. **Automation erstellen → Aus Blueprint** → Formular ausfüllen.
+5. Pro Himmelsrichtung wiederholen.
 
-## Handbetrieb-Erkennung
+> Re-Import einer neueren Blueprint-Version: bestehende Automationen behalten
+> ihre Eingaben. Entfernte Felder (z. B. `Positions-Toleranz` ab v3) fallen
+> still weg, neue Felder starten auf ihrem Default.
 
-Die Automation fährt einen Rollladen nur, wenn er noch nahe an der zuletzt von
-ihr gesetzten Position steht (± Positions-Toleranz). Hast du ihn von Hand
-deutlich woanders hingestellt, bleibt er in Ruhe – bis zur nächsten Phase, die
-ihn ohnehin bewegen würde (z. B. Nacht).
+## Handbetrieb
+
+**Keine Handbetrieb-Erkennung.** Die Automatik fährt immer auf ihre berechnete
+Soll-Position. Willst du selbst steuern, den **Automatik-Schalter ausschalten**
+(optionaler `input_boolean` in den Optionen, z. B. als Kachel aufs Dashboard).
+Wieder einschalten → beim nächsten Auslöser (Sonnen-Kante, Neustart, Morgen,
+oder Aufsteh-Button) wird der Soll-Zustand neu gesetzt.
 
 ## Bekannte Randfälle
 
-- **Verschattungs-Position von Nacht/Unwetter unterscheiden** (z. B. 30 vs 0).
-  Sind sie gleich, kann eine kurze Wolke die „Verzögerung Öffnen" umgehen.
+- **Verschattungs-Position von Nacht/Unwetter unterscheiden** (z. B. 30 vs 0),
+  sonst kann eine kurze Wolke die „Verzögerung Öffnen" umgehen.
+- **Nordseiten**: `azimuth_tolerance` klein (40–55°) **und** `sun_elevation_min`
+  hoch (20–25°), sonst verschattet die schwache Morgen-/Abendsonne unnötig.
 - **Neustart:** Home Assistant stellt beim Start den zur Uhrzeit passenden
   Zustand ohne Verzögerung her.
 - **Unwetter bei Hitze:** Zieht ein Gewitter an einem heißen, sonnigen

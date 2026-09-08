@@ -13,10 +13,9 @@ blueprint:
        Verschattungs-Position geöffnet.
 
     2. TAGSÜBER VERSCHATTEN – scheint die Sonne lange genug (Verzögerung
-       Schließen) auf die Fassade (Azimut ± Toleranz, hoch genug, nicht zu
-       bewölkt, optional warm genug), fahren die Rollläden auf die
-       Verschattungs-Position. Lange genug verschattet (Verzögerung Öffnen) →
-       wieder auf.
+       Schließen) auf die Fassade (Azimut ± Toleranz, hoch genug, klarer
+       Himmel, warm genug), fahren die Rollläden auf die Verschattungs-Position.
+       Lange genug verschattet (Verzögerung Öffnen) → wieder auf.
 
     3. GUTE NACHT – schließt an Sonnenuntergang ± Offset, begrenzt auf ein
        Fenster zwischen "frühestens" (Winterschutz) und "spätestens"
@@ -30,6 +29,10 @@ blueprint:
 
 
     Prioritätsreihenfolge: Unwetter > Nacht > Verschattung > offen.
+
+    Es gibt KEINE Handbetrieb-Erkennung: die Automatik fährt immer auf ihre
+    berechnete Soll-Position. Wer manuell steuern will, schaltet die Automation
+    über den Automatik-Schalter aus.
 
     Pro Himmelsrichtung eine eigene Automation. Für unterschiedliche
     Schlafenszeiten (Kinderzimmer vs. Rest) zwei Instanzen mit verschiedener
@@ -92,17 +95,21 @@ blueprint:
             number: { min: 0, max: 359, step: 1, unit_of_measurement: "°", mode: box }
         azimuth_tolerance:
           name: Azimut-Toleranz (±)
-          description: "Empfehlung: 90 (ganze besonnte Seite), 70–80 nur direkte Einstrahlung."
-          default: 90
+          description: >
+            Wie weit die Sonne seitlich von der Fassadenrichtung stehen darf und
+            noch als "scheint auf die Fassade" zählt. Empfehlung: 70. ±90
+            verschattet, bis die Sonne fast hinterm Haus steht (streifender
+            Einfall zählt dann noch). Nordseiten kleiner (40–55).
+          default: 70
           selector:
-            number: { min: 30, max: 120, step: 5, unit_of_measurement: "°", mode: slider }
+            number: { min: 20, max: 120, step: 5, unit_of_measurement: "°", mode: slider }
         sun_elevation_min:
           name: Minimale Sonnenhöhe
           description: >
-            Erst ab dieser Höhe verschatten. Empfehlung: 10 (Hitzeschutz). Für
-            Ost-/Westfassaden 3–5, weil die tiefe Sonne dort am tiefsten in den
-            Raum scheint.
-          default: 10
+            Erst ab dieser Höhe verschatten. Empfehlung: 15. Tiefer (5–10) nur,
+            wenn tief stehende Ost-/Westsonne wirklich blendet/heizt. Nordseiten
+            höher (20–25), sonst verschattet die schwache Morgen-/Abendsonne.
+          default: 15
           selector:
             number: { min: 0, max: 40, step: 1, unit_of_measurement: "°", mode: slider }
         sun_elevation_max:
@@ -126,20 +133,30 @@ blueprint:
         cloud_coverage_max:
           name: Maximale Bewölkung zum Verschatten
           description: >
-            Über diesem Wolkenanteil kein starker Sonnenschein → nicht
-            verschatten. Empfehlung: 40 (Bereich 30–50). Fehlt der Wert, zählt
-            der Wetter-Zustand (sunny/partlycloudy).
+            Nur genutzt, wenn die Wetter-Entität das Attribut cloud_coverage hat
+            (met.no ja, WetterOnline nein). Über diesem Wolkenanteil kein starker
+            Sonnenschein → nicht verschatten. Empfehlung: 40 (Bereich 30–50).
           default: 40
           selector:
             number: { min: 0, max: 100, step: 5, unit_of_measurement: "%", mode: slider }
+        bright_weather_states:
+          name: "Zustände, die als \"sonnig genug\" gelten"
+          description: >
+            Ersatz-Prüfung, wenn cloud_coverage fehlt (z. B. WetterOnline). Nur
+            bei einem dieser Wetter-Zustände wird verschattet. Empfehlung: nur
+            sunny – so wird an bewölkten Tagen nicht verschattet. partlycloudy
+            ergänzen, wenn auch bei Wolkenlücken verschattet werden soll.
+          default: [sunny]
+          selector:
+            select:
+              multiple: true
+              options: [sunny, partlycloudy, windy, windy-variant, exceptional, clear-night]
         shade_min_temperature:
           name: Verschatten erst ab (°C, 0 = aus)
           description: >
-            Nur verschatten, wenn die Außentemperatur mindestens so hoch ist –
-            damit an kühlen, sonnigen Wintertagen nicht verschattet wird und die
-            Morgensonne bei kühlem Wetter voll reinkommt. Empfehlung: 18–20.
-            0 = Temperatur ignorieren.
-          default: 18
+            Nur verschatten, wenn die Außentemperatur mindestens so hoch ist.
+            Empfehlung: 20 (nur bei echter Hitze). 0 = Temperatur ignorieren.
+          default: 20
           selector:
             number: { min: 0, max: 35, step: 1, unit_of_measurement: "°C", mode: slider }
         sun_close_delay:
@@ -180,8 +197,9 @@ blueprint:
         wake_button:
           name: Auslöser-Button "Aufstehen"
           description: >
-            input_button-Helfer. Drücken öffnet sofort (unabhängig von der
-            Uhrzeit). Vorher unter Einstellungen → Geräte & Dienste → Helfer
+            input_button-Helfer. Drücken setzt sofort den Tag-Soll-Zustand
+            (offen, oder Verschattung falls schon nötig) – unabhängig von der
+            Uhrzeit. Vorher unter Einstellungen → Geräte & Dienste → Helfer
             einen "Taste"-Helfer anlegen. Abends gedrückt fahren die Rollläden
             kurz hoch und die Nacht-Logik schließt wieder.
           selector:
@@ -252,21 +270,17 @@ blueprint:
       icon: mdi:tune
       input:
         enable_entity:
-          name: Freigabe-Schalter (optional)
-          description: "input_boolean; 'aus' → Automation tut nichts."
+          name: Automatik-Schalter (optional)
+          description: >
+            input_boolean-Helfer. AN = Automatik aktiv. AUS = Automatik macht
+            gar nichts, du hast volle Handkontrolle über die Rollläden. Das ist
+            der Ersatz für eine Handbetrieb-Erkennung: zum manuellen Fahren erst
+            hier ausschalten. Leer lassen, wenn die Automatik immer laufen soll.
           default:
           selector:
             entity:
               filter:
                 domain: input_boolean
-        position_tolerance:
-          name: Positions-Toleranz für Handbetrieb-Erkennung
-          description: >
-            Nur fahren, wenn der Rollladen noch nahe an der zuletzt automatisch
-            gesetzten Position steht. Empfehlung: 5.
-          default: 5
-          selector:
-            number: { min: 0, max: 25, step: 1, unit_of_measurement: "%", mode: slider }
 
 mode: queued
 max: 3
@@ -279,6 +293,7 @@ trigger_variables:
   tv_elev_max: !input sun_elevation_max
   tv_weather: !input weather_entity
   tv_cloud_max: !input cloud_coverage_max
+  tv_bright_states: !input bright_weather_states
   tv_shade_min_temp: !input shade_min_temperature
 
 trigger:
@@ -289,11 +304,11 @@ trigger:
       {% set el = state_attr('sun.sun', 'elevation') | float(-90) %}
       {% set d = (az - (tv_facade_azimuth | float(180))) | abs %}
       {% set d = [d, 360 - d] | min %}
-      {% set on_facade = d <= (tv_azimuth_tolerance | float(90)) %}
+      {% set on_facade = d <= (tv_azimuth_tolerance | float(70)) %}
       {% set cc = state_attr(tv_weather, 'cloud_coverage') %}
       {% set bright = (cc | float(100) <= (tv_cloud_max | float(40))) if cc is not none
-                      else (states(tv_weather) in ['sunny', 'partlycloudy', 'windy', 'windy-variant']) %}
-      {% set elev_ok = el >= (tv_elev_min | float(10))
+                      else (states(tv_weather) in tv_bright_states) %}
+      {% set elev_ok = el >= (tv_elev_min | float(15))
                        and ((tv_elev_max | float(0)) <= 0 or el <= (tv_elev_max | float(0))) %}
       {% set warm_ok = (tv_shade_min_temp | float(0)) <= 0
                        or (state_attr(tv_weather, 'temperature') | float(-99)) >= (tv_shade_min_temp | float(0)) %}
@@ -306,11 +321,11 @@ trigger:
       {% set el = state_attr('sun.sun', 'elevation') | float(-90) %}
       {% set d = (az - (tv_facade_azimuth | float(180))) | abs %}
       {% set d = [d, 360 - d] | min %}
-      {% set on_facade = d <= (tv_azimuth_tolerance | float(90)) %}
+      {% set on_facade = d <= (tv_azimuth_tolerance | float(70)) %}
       {% set cc = state_attr(tv_weather, 'cloud_coverage') %}
       {% set bright = (cc | float(100) <= (tv_cloud_max | float(40))) if cc is not none
-                      else (states(tv_weather) in ['sunny', 'partlycloudy', 'windy', 'windy-variant']) %}
-      {% set elev_ok = el >= (tv_elev_min | float(10))
+                      else (states(tv_weather) in tv_bright_states) %}
+      {% set elev_ok = el >= (tv_elev_min | float(15))
                        and ((tv_elev_max | float(0)) <= 0 or el <= (tv_elev_max | float(0))) %}
       {% set warm_ok = (tv_shade_min_temp | float(0)) <= 0
                        or (state_attr(tv_weather, 'temperature') | float(-99)) >= (tv_shade_min_temp | float(0)) %}
@@ -341,6 +356,7 @@ variables:
   elev_max: !input sun_elevation_max
   weather_entity: !input weather_entity
   cloud_max: !input cloud_coverage_max
+  bright_states: !input bright_weather_states
   shade_min_temp: !input shade_min_temperature
   sunrise_offset_min: !input sunrise_offset_minutes
   earliest_open: !input earliest_open_time
@@ -353,7 +369,6 @@ variables:
   gust_threshold_kmh: !input wind_gust_threshold_kmh
   forecast_hours: !input severe_forecast_hours
   enable_entity: !input enable_entity
-  pos_tol: !input position_tolerance
 
   enable_ok: >
     {{ enable_entity is none or enable_entity == '' or is_state(enable_entity, 'on') }}
@@ -384,19 +399,18 @@ variables:
     {% set az = state_attr('sun.sun', 'azimuth') | float(999) %}
     {% set d = (az - (facade_azimuth | float(180))) | abs %}
     {% set d = [d, 360 - d] | min %}
-    {{ d <= (azimuth_tolerance | float(90)) }}
+    {{ d <= (azimuth_tolerance | float(70)) }}
   shade_now: >
     {% set el = state_attr('sun.sun', 'elevation') | float(-90) %}
     {% set cc = state_attr(weather_entity, 'cloud_coverage') %}
     {% set bright = (cc | float(100) <= (cloud_max | float(40))) if cc is not none
-                    else (states(weather_entity) in ['sunny', 'partlycloudy', 'windy', 'windy-variant']) %}
-    {% set elev_ok = el >= (elev_min | float(10))
+                    else (states(weather_entity) in bright_states) %}
+    {% set elev_ok = el >= (elev_min | float(15))
                      and ((elev_max | float(0)) <= 0 or el <= (elev_max | float(0))) %}
     {% set warm_ok = (shade_min_temp | float(0)) <= 0
                      or (state_attr(weather_entity, 'temperature') | float(-99)) >= (shade_min_temp | float(0)) %}
     {{ sun_on_facade and bright and elev_ok and warm_ok }}
 
-  # Wetter-Entität überhaupt nutzbar? (nicht unavailable/unknown/leer)
   weather_ok: >
     {{ states(weather_entity) not in ['unavailable', 'unknown', 'none', ''] }}
   now_threat: >
@@ -454,62 +468,84 @@ action:
   - variables:
       severe_weather: "{{ now_threat or fc_threat }}"
 
+  # Prioritätsreihenfolge über 4 Zweige. Entprellung: in die Verschattung nur
+  # über den sun_shade-Trigger (for: Verzögerung Schließen), aus der
+  # Verschattung nur über sun_unshade (for: Verzögerung Öffnen). tick/ha_start
+  # fahren nur die "harten" Stufen (Unwetter/Nacht) und das Morgen-Fenster.
   - choose:
-      # -------------------------------------------------------------
-      # A. Unwetterschutz – Vorrang, jeder Trigger
-      # -------------------------------------------------------------
+      # ---- A. Unwetter ----------------------------------------------
       - conditions:
           - "{{ enable_ok }}"
           - "{{ severe_weather }}"
         sequence:
+          - variables:
+              target: !input weather_close_position
           - repeat:
               for_each: "{{ covers }}"
               sequence:
                 - variables:
                     cur: "{{ state_attr(repeat.item, 'current_position') }}"
                 - choose:
-                    - conditions: >
-                        {{ cur is not none
-                           and (cur | int(-1)) > (weather_close_position | int(0)) + (pos_tol | int(5)) }}
+                    - conditions:
+                        - "{{ cur is not none }}"
+                        - "{{ ((cur | int(0)) - (target | int(0))) | abs > 2 }}"
                       sequence:
                         - service: cover.set_cover_position
                           target: { entity_id: "{{ repeat.item }}" }
-                          data: { position: "{{ weather_close_position }}" }
-                    - conditions: "{{ cur is none and is_state(repeat.item, 'open') }}"
+                          data: { position: "{{ target | int(0) }}" }
+                    - conditions:
+                        - "{{ cur is none }}"
+                        - "{{ (target | int(0)) <= 0 }}"
+                        - "{{ is_state(repeat.item, 'open') }}"
                       sequence:
                         - service: cover.close_cover
                           target: { entity_id: "{{ repeat.item }}" }
+                    - conditions:
+                        - "{{ cur is none }}"
+                        - "{{ (target | int(0)) >= 100 }}"
+                        - "{{ is_state(repeat.item, 'closed') }}"
+                      sequence:
+                        - service: cover.open_cover
+                          target: { entity_id: "{{ repeat.item }}" }
 
-      # -------------------------------------------------------------
-      # B. Nacht – schließen / geschlossen halten
-      # -------------------------------------------------------------
+      # ---- B. Nacht -----------------------------------------------
       - conditions:
           - "{{ enable_ok }}"
           - "{{ not severe_weather }}"
           - "{{ is_night }}"
-          - "{{ trigger.id in ['tick', 'ha_start', 'weather_change'] }}"
+          - "{{ trigger.id in ['tick', 'ha_start', 'weather_change', 'wake_button'] }}"
         sequence:
+          - variables:
+              target: !input night_close_position
           - repeat:
               for_each: "{{ covers }}"
               sequence:
                 - variables:
                     cur: "{{ state_attr(repeat.item, 'current_position') }}"
                 - choose:
-                    - conditions: >
-                        {{ cur is not none
-                           and (cur | int(-1)) > (night_close_position | int(0)) + (pos_tol | int(5)) }}
+                    - conditions:
+                        - "{{ cur is not none }}"
+                        - "{{ ((cur | int(0)) - (target | int(0))) | abs > 2 }}"
                       sequence:
                         - service: cover.set_cover_position
                           target: { entity_id: "{{ repeat.item }}" }
-                          data: { position: "{{ night_close_position }}" }
-                    - conditions: "{{ cur is none and is_state(repeat.item, 'open') }}"
+                          data: { position: "{{ target | int(0) }}" }
+                    - conditions:
+                        - "{{ cur is none }}"
+                        - "{{ (target | int(0)) <= 0 }}"
+                        - "{{ is_state(repeat.item, 'open') }}"
                       sequence:
                         - service: cover.close_cover
                           target: { entity_id: "{{ repeat.item }}" }
+                    - conditions:
+                        - "{{ cur is none }}"
+                        - "{{ (target | int(0)) >= 100 }}"
+                        - "{{ is_state(repeat.item, 'closed') }}"
+                      sequence:
+                        - service: cover.open_cover
+                          target: { entity_id: "{{ repeat.item }}" }
 
-      # -------------------------------------------------------------
-      # C. Tag: verschatten (entprellt) / Neustart-Korrektur
-      # -------------------------------------------------------------
+      # ---- C. Verschatten (entprellt) --------------------------
       - conditions:
           - "{{ enable_ok }}"
           - "{{ not severe_weather }}"
@@ -517,61 +553,72 @@ action:
           - "{{ shade_now }}"
           - "{{ trigger.id in ['sun_shade', 'ha_start', 'wake_button'] }}"
         sequence:
+          - variables:
+              target: !input sun_close_position
           - repeat:
               for_each: "{{ covers }}"
               sequence:
                 - variables:
                     cur: "{{ state_attr(repeat.item, 'current_position') }}"
                 - choose:
-                    - conditions: >
-                        {{ cur is not none
-                           and (cur | int(-1)) > (sun_close_position | int(0)) + (pos_tol | int(5)) }}
+                    - conditions:
+                        - "{{ cur is not none }}"
+                        - "{{ ((cur | int(0)) - (target | int(0))) | abs > 2 }}"
                       sequence:
                         - service: cover.set_cover_position
                           target: { entity_id: "{{ repeat.item }}" }
-                          data: { position: "{{ sun_close_position }}" }
-                    - conditions: "{{ cur is none and is_state(repeat.item, 'open') }}"
+                          data: { position: "{{ target | int(0) }}" }
+                    - conditions:
+                        - "{{ cur is none }}"
+                        - "{{ (target | int(0)) <= 0 }}"
+                        - "{{ is_state(repeat.item, 'open') }}"
                       sequence:
                         - service: cover.close_cover
                           target: { entity_id: "{{ repeat.item }}" }
+                    - conditions:
+                        - "{{ cur is none }}"
+                        - "{{ (target | int(0)) >= 100 }}"
+                        - "{{ is_state(repeat.item, 'closed') }}"
+                      sequence:
+                        - service: cover.open_cover
+                          target: { entity_id: "{{ repeat.item }}" }
 
-      # -------------------------------------------------------------
-      # D. Tag: öffnen – Morgen-Crossing, entprelltes Aufhellen,
-      #    Neustart/Button, Erholung nach Unwetter
-      # -------------------------------------------------------------
+      # ---- D. Offen (entprellt) / Morgen-Fenster --------------
       - conditions:
           - "{{ enable_ok }}"
           - "{{ not severe_weather }}"
           - "{{ not is_night }}"
           - "{{ not shade_now }}"
           - >
-            {{ trigger.id in ['sun_unshade', 'ha_start', 'wake_button', 'tick', 'weather_change'] }}
+            {{ trigger.id in ['sun_unshade', 'ha_start', 'wake_button']
+               or (trigger.id == 'tick' and morning_crossing) }}
         sequence:
+          - variables:
+              target: !input open_position
           - repeat:
               for_each: "{{ covers }}"
               sequence:
                 - variables:
-                    cur: "{{ state_attr(repeat.item, 'current_position') | int(-1) }}"
-                    forced: "{{ trigger.id in ['wake_button', 'ha_start', 'sun_unshade'] }}"
-                    # "steht noch dort, wo Nacht- oder Unwetter-Logik ihn
-                    # hingefahren hat" – die Verschattungs-Position ist bewusst
-                    # NICHT dabei, damit kurze Wolken die Öffnen-Verzögerung
-                    # nicht umgehen (dafür ist nur der sun_unshade-Trigger da).
-                    at_auto_low: >
-                      {{ cur >= 0 and (
-                           cur <= (night_close_position | int(0)) + (pos_tol | int(5))
-                        or cur <= (weather_close_position | int(0)) + (pos_tol | int(5))
-                      ) }}
+                    cur: "{{ state_attr(repeat.item, 'current_position') }}"
                 - choose:
-                    - conditions: >
-                        {{ cur >= 0
-                           and cur < (open_position | int(100)) - (pos_tol | int(5))
-                           and (forced or morning_crossing or at_auto_low) }}
+                    - conditions:
+                        - "{{ cur is not none }}"
+                        - "{{ ((cur | int(0)) - (target | int(0))) | abs > 2 }}"
                       sequence:
                         - service: cover.set_cover_position
                           target: { entity_id: "{{ repeat.item }}" }
-                          data: { position: "{{ open_position }}" }
-                    - conditions: "{{ cur < 0 and is_state(repeat.item, 'closed') }}"
+                          data: { position: "{{ target | int(0) }}" }
+                    - conditions:
+                        - "{{ cur is none }}"
+                        - "{{ (target | int(0)) <= 0 }}"
+                        - "{{ is_state(repeat.item, 'open') }}"
+                      sequence:
+                        - service: cover.close_cover
+                          target: { entity_id: "{{ repeat.item }}" }
+                    - conditions:
+                        - "{{ cur is none }}"
+                        - "{{ (target | int(0)) >= 100 }}"
+                        - "{{ is_state(repeat.item, 'closed') }}"
                       sequence:
                         - service: cover.open_cover
                           target: { entity_id: "{{ repeat.item }}" }
